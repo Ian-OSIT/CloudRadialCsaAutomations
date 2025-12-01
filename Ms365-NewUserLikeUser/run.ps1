@@ -136,8 +136,8 @@ if ($resultCode -Eq 200) {
     $existingUserUpn = $ExistingUserEmail
     $newUserUpn = $NewUserEmail
 
-    # Retrieve the existing user's details
-    $existingUser = Get-MgUser -UserId $existingUserUpn
+    # Retrieve the existing user's details including licenses
+    $existingUser = Get-MgUser -UserId $existingUserUpn -Property Id,DisplayName,UserPrincipalName,AssignedLicenses
 
     if (-Not $existingUser) {
         $message = "Request failed. User `"$ExistingUserEmail`" could not be found."
@@ -219,20 +219,77 @@ if ($resultCode -Eq 200) {
                 # Add the new user to the same groups
                 if ($existingUserGroups.Count -gt 0) {
                     Write-Host "Adding to groups..."
+                    $securityGroupsAdded = 0
+                    $mailEnabledGroupsAdded = 0
+                    $groupsFailed = 0
+
+                    # Connect to Exchange Online for mail-enabled groups
+                    try {
+                        Write-Host "Connecting to Exchange Online..."
+                        $securePassword = ConvertTo-SecureString -String $env:Ms365_AuthSecretId -AsPlainText -Force
+                        $credential = New-Object System.Management.Automation.PSCredential($env:Ms365_AuthAppId, $securePassword)
+
+                        Connect-ExchangeOnline -AppId $env:Ms365_AuthAppId -CertificateThumbprint $null -Organization "$($TenantId).onmicrosoft.com" -Certificate $null -Credential $credential -ShowBanner:$false
+                        $exchangeConnected = $true
+                        Write-Host "Exchange Online connected successfully"
+                    }
+                    catch {
+                        Write-Host "WARNING: Could not connect to Exchange Online: $_"
+                        Write-Host "Mail-enabled groups and distribution lists will be skipped."
+                        $exchangeConnected = $false
+                    }
+
                     $existingUserGroups | ForEach-Object {
                         if ($_.AdditionalProperties.'@odata.type' -eq '#microsoft.graph.group') {
+                            $groupId = $_.Id
+
+                            # Try Graph API first (works for security groups)
                             try {
                                 $params = @{
                                     "@odata.id" = "https://graph.microsoft.com/v1.0/directoryObjects/$($newUser.Id)"
                                 }
-                                New-MgGroupMember -GroupId $_.Id -BodyParameter $params -ErrorAction Stop
-                                Write-Host "Added to group: $($_.Id)"
+                                New-MgGroupMember -GroupId $groupId -BodyParameter $params -ErrorAction Stop
+                                $securityGroupsAdded++
+                                Write-Host "Added to security group: $groupId"
                             }
                             catch {
-                                Write-Host "ERROR adding to group $($_.Id): $_"
+                                $errorMessage = $_.Exception.Message
+
+                                # If it's a mail-enabled group error, try Exchange Online
+                                if (($errorMessage -like "*mail-enabled*" -or $errorMessage -like "*distribution list*") -and $exchangeConnected) {
+                                    try {
+                                        # Get group details to find the name/identity
+                                        $group = Get-MgGroup -GroupId $groupId -Property Id,DisplayName,Mail,MailEnabled
+                                        $groupIdentity = if ($group.Mail) { $group.Mail } else { $group.DisplayName }
+
+                                        Add-DistributionGroupMember -Identity $groupIdentity -Member $newUserUpn -ErrorAction Stop
+                                        $mailEnabledGroupsAdded++
+                                        Write-Host "Added to mail-enabled group: $groupIdentity"
+                                    }
+                                    catch {
+                                        Write-Host "ERROR: Could not add to mail-enabled group $groupIdentity : $_"
+                                        $groupsFailed++
+                                    }
+                                }
+                                else {
+                                    Write-Host "ERROR: Could not add to group $groupId : $errorMessage"
+                                    $groupsFailed++
+                                }
                             }
                         }
                     }
+
+                    # Disconnect Exchange Online
+                    if ($exchangeConnected) {
+                        try {
+                            Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
+                        }
+                        catch {
+                            # Ignore disconnect errors
+                        }
+                    }
+
+                    Write-Host "Groups summary: $securityGroupsAdded security groups added, $mailEnabledGroupsAdded mail-enabled groups added, $groupsFailed failed"
                 }
 
                 $message = "New user `"$NewUserEmail`" created successfully and assigned licenses and added to groups like user `"$ExistingUserEmail`"."
