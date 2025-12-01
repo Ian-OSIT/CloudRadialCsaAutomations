@@ -174,31 +174,57 @@ if ($resultCode -Eq 200) {
             }
 
             # Create the new user
-            $newUser = New-MgUser -UserPrincipalName $newUserUpn -DisplayName $NewUserDisplayName -GivenName $NewUserFirstName -Surname $NewUserLastName -MailNickname ($NewUserEmail.Split('@')[0]) -AccountEnabled $true -PasswordProfile $PasswordProfile -UsageLocation "AU"
-
-            # Assign the same licenses as the existing user
-            if ($existingUser.AssignedLicenses.Count -gt 0) {
-                $existingUser.AssignedLicenses | ForEach-Object {
-                    Set-MgUserLicense -UserId $newUser.Id -AddLicenses @{ SkuId = $_.SkuId } -RemoveLicenses @()
-                }
+            try {
+                Write-Host "Attempting to create user: $newUserUpn"
+                $newUser = New-MgUser -UserPrincipalName $newUserUpn -DisplayName $NewUserDisplayName -GivenName $NewUserFirstName -Surname $NewUserLastName -MailNickname ($NewUserEmail.Split('@')[0]) -AccountEnabled $true -PasswordProfile $PasswordProfile -UsageLocation "AU" -ErrorAction Stop
+                Write-Host "User created with ID: $($newUser.Id)"
+            }
+            catch {
+                Write-Host "ERROR creating user: $_"
+                $message = "Failed to create user: $_"
+                $resultCode = 500
             }
 
-            # Get the groups the existing user is a member of
-            $existingUserGroups = Get-MgUserMemberOf -UserId $existingUser.Id
-
-            # Add the new user to the same groups
-            if ($existingUserGroups.Count -gt 0) {
-                $existingUserGroups | ForEach-Object {
-                    if ($_.AdditionalProperties.'@odata.type' -eq '#microsoft.graph.group') {
-                        $params = @{
-                            "@odata.id" = "https://graph.microsoft.com/v1.0/directoryObjects/$($newUser.Id)"
+            # Only proceed with licenses and groups if user was created successfully
+            if ($newUser -and $newUser.Id -and $resultCode -eq 200) {
+                # Assign the same licenses as the existing user
+                if ($existingUser.AssignedLicenses.Count -gt 0) {
+                    Write-Host "Assigning licenses..."
+                    $existingUser.AssignedLicenses | ForEach-Object {
+                        try {
+                            Set-MgUserLicense -UserId $newUser.Id -AddLicenses @{ SkuId = $_.SkuId } -RemoveLicenses @() -ErrorAction Stop
+                            Write-Host "Assigned license: $($_.SkuId)"
                         }
-                        New-MgGroupMember -GroupId $_.Id -BodyParameter $params
+                        catch {
+                            Write-Host "ERROR assigning license: $_"
+                        }
                     }
                 }
-            }
 
-            $message = "New user `"$NewUserEmail`" created successfully and assigned licenses and added to groups like user `"$ExistingUserEmail`"."
+                # Get the groups the existing user is a member of
+                $existingUserGroups = Get-MgUserMemberOf -UserId $existingUser.Id
+
+                # Add the new user to the same groups
+                if ($existingUserGroups.Count -gt 0) {
+                    Write-Host "Adding to groups..."
+                    $existingUserGroups | ForEach-Object {
+                        if ($_.AdditionalProperties.'@odata.type' -eq '#microsoft.graph.group') {
+                            try {
+                                $params = @{
+                                    "@odata.id" = "https://graph.microsoft.com/v1.0/directoryObjects/$($newUser.Id)"
+                                }
+                                New-MgGroupMember -GroupId $_.Id -BodyParameter $params -ErrorAction Stop
+                                Write-Host "Added to group: $($_.Id)"
+                            }
+                            catch {
+                                Write-Host "ERROR adding to group $($_.Id): $_"
+                            }
+                        }
+                    }
+                }
+
+                $message = "New user `"$NewUserEmail`" created successfully and assigned licenses and added to groups like user `"$ExistingUserEmail`"."
+            }
         }
     }
 }
