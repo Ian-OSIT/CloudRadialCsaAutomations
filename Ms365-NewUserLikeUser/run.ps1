@@ -223,13 +223,27 @@ if ($resultCode -Eq 200) {
                     $mailEnabledGroupsAdded = 0
                     $groupsFailed = 0
 
-                    # Connect to Exchange Online for mail-enabled groups
+                    # Connect to Exchange Online for mail-enabled groups using certificate authentication
                     try {
-                        Write-Host "Connecting to Exchange Online..."
-                        $securePassword = ConvertTo-SecureString -String $env:Ms365_AuthSecretId -AsPlainText -Force
-                        $credential = New-Object System.Management.Automation.PSCredential($env:Ms365_AuthAppId, $securePassword)
+                        Write-Host "Connecting to Exchange Online with certificate..."
 
-                        Connect-ExchangeOnline -AppId $env:Ms365_AuthAppId -CertificateThumbprint $null -Organization "$($TenantId).onmicrosoft.com" -Certificate $null -Credential $credential -ShowBanner:$false
+                        # Determine organization name (remove .onmicrosoft.com if present)
+                        $orgName = if ($TenantId -match "^[0-9a-f]{8}-") {
+                            # If TenantId is a GUID, we need to construct the org name
+                            # For now, we'll try to get it from the domain
+                            $domain = (Get-MgUser -UserId $existingUserUpn -Property UserPrincipalName).UserPrincipalName.Split('@')[1]
+                            if ($domain -like "*.onmicrosoft.com") {
+                                $domain.Replace('.onmicrosoft.com', '')
+                            }
+                            else {
+                                $domain.Split('.')[0]
+                            }
+                        }
+                        else {
+                            $TenantId
+                        }
+
+                        Connect-ExchangeOnline -AppId $env:Ms365_AuthAppId -CertificateThumbprint $env:Ms365_CertThumbprint -Organization "$orgName.onmicrosoft.com" -ShowBanner:$false -ErrorAction Stop
                         $exchangeConnected = $true
                         Write-Host "Exchange Online connected successfully"
                     }
