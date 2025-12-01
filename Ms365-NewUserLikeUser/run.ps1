@@ -137,7 +137,7 @@ if ($resultCode -Eq 200) {
     $newUserUpn = $NewUserEmail
 
     # Retrieve the existing user's details
-    $existingUser = Get-MgUser -UserPrincipalName $existingUserUpn
+    $existingUser = Get-MgUser -UserId $existingUserUpn
 
     if (-Not $existingUser) {
         $message = "Request failed. User `"$ExistingUserEmail`" could not be found."
