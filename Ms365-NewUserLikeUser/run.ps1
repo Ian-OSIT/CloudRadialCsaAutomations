@@ -219,26 +219,22 @@ if ($resultCode -Eq 200) {
                     try {
                         Write-Host "Connecting to Exchange Online with certificate..."
 
-                        # Extract organization name from user's email domain
-                        $userDomain = $ExistingUserEmail.Split('@')[1]
-                        $orgName = if ($userDomain -like "*.onmicrosoft.com") {
-                            # Already has onmicrosoft.com, use as-is
-                            $userDomain
-                        }
-                        elseif ($userDomain -like "*.com.au" -or $userDomain -like "*.com" -or $userDomain -like "*.net") {
-                            # Custom domain - need to find the onmicrosoft.com name
-                            # Get from the user's mail property or construct from domain
-                            $domainParts = $userDomain.Split('.')
-                            "$($domainParts[0]).onmicrosoft.com"
+                        # Use environment variable for organization name
+                        $orgName = $env:Ms365_OrgName
+
+                        if (-Not $orgName) {
+                            Write-Host "WARNING: Ms365_OrgName environment variable not set. Cannot connect to Exchange Online."
+                            $exchangeConnected = $false
                         }
                         else {
-                            "$userDomain.onmicrosoft.com"
-                        }
+                            Write-Host "Connecting to Exchange with organization: $orgName"
+                            Write-Host "App ID: $($env:Ms365_AuthAppId)"
+                            Write-Host "Cert Thumbprint: $($env:Ms365_CertThumbprint)"
 
-                        Write-Host "Connecting to Exchange with organization: $orgName"
-                        Connect-ExchangeOnline -AppId $env:Ms365_AuthAppId -CertificateThumbprint $env:Ms365_CertThumbprint -Organization $orgName -ShowBanner:$false -ErrorAction Stop
-                        $exchangeConnected = $true
-                        Write-Host "Exchange Online connected successfully"
+                            Connect-ExchangeOnline -AppId $env:Ms365_AuthAppId -CertificateThumbprint $env:Ms365_CertThumbprint -Organization $orgName -ShowBanner:$false -ErrorAction Stop
+                            $exchangeConnected = $true
+                            Write-Host "Exchange Online connected successfully"
+                        }
                     }
                     catch {
                         Write-Host "WARNING: Could not connect to Exchange Online: $_"
