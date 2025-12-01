@@ -176,7 +176,19 @@ if ($resultCode -Eq 200) {
             # Create the new user
             try {
                 Write-Host "Attempting to create user: $newUserUpn"
-                $newUser = New-MgUser -UserPrincipalName $newUserUpn -DisplayName $NewUserDisplayName -GivenName $NewUserFirstName -Surname $NewUserLastName -MailNickname ($NewUserEmail.Split('@')[0]) -AccountEnabled $true -PasswordProfile $PasswordProfile -UsageLocation "AU" -ErrorAction Stop
+
+                $userParams = @{
+                    UserPrincipalName = $newUserUpn
+                    DisplayName       = $NewUserDisplayName
+                    GivenName         = $NewUserFirstName
+                    Surname           = $NewUserLastName
+                    MailNickname      = ($NewUserEmail.Split('@')[0])
+                    AccountEnabled    = $true
+                    PasswordProfile   = $PasswordProfile
+                    UsageLocation     = "AU"
+                }
+
+                $newUser = New-MgUser -BodyParameter $userParams -ErrorAction Stop
                 Write-Host "User created with ID: $($newUser.Id)"
             }
             catch {
