@@ -192,14 +192,40 @@ if ($resultCode -Eq 200) {
                     $licensesSkipped = 0
 
                     $existingUser.AssignedLicenses | ForEach-Object {
-                        try {
-                            Set-MgUserLicense -UserId $newUser.Id -AddLicenses @{ SkuId = $_.SkuId } -RemoveLicenses @() -ErrorAction Stop
-                            $licensesAssigned++
-                            Write-Host "Assigned license: $($_.SkuId)"
-                        }
-                        catch {
-                            $licensesSkipped++
-                            Write-Host "WARNING: Could not assign license $($_.SkuId) (may not be available): $($_.Exception.Message)"
+                        $licenseSkuId = $_.SkuId
+                        $retryCount = 0
+                        $maxRetries = 3
+                        $assigned = $false
+
+                        while (-not $assigned -and $retryCount -lt $maxRetries) {
+                            try {
+                                Set-MgUserLicense -UserId $newUser.Id -AddLicenses @{ SkuId = $licenseSkuId } -RemoveLicenses @() -ErrorAction Stop
+                                $licensesAssigned++
+                                $assigned = $true
+                                Write-Host "Assigned license: $licenseSkuId"
+                            }
+                            catch {
+                                $errorMsg = $_.Exception.Message
+
+                                # Check if it's a concurrency error - retry if so
+                                if ($errorMsg -like "*ConcurrencyViolation*" -or $errorMsg -like "*concurrent*") {
+                                    $retryCount++
+                                    if ($retryCount -lt $maxRetries) {
+                                        Write-Host "Concurrency error assigning license $licenseSkuId - retry $retryCount of $maxRetries"
+                                        Start-Sleep -Seconds 2
+                                    }
+                                    else {
+                                        $licensesSkipped++
+                                        Write-Host "WARNING: License $licenseSkuId failed after $maxRetries retries (concurrency)"
+                                    }
+                                }
+                                else {
+                                    # Different error - don't retry
+                                    $licensesSkipped++
+                                    $assigned = $true  # Exit retry loop
+                                    Write-Host "WARNING: Could not assign license $licenseSkuId : $errorMsg"
+                                }
+                            }
                         }
                     }
                     Write-Host "Licenses summary: $licensesAssigned assigned successfully, $licensesSkipped skipped"
