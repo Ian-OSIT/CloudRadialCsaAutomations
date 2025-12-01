@@ -190,7 +190,10 @@ if ($resultCode -Eq 200) {
             if ($existingUserGroups.Count -gt 0) {
                 $existingUserGroups | ForEach-Object {
                     if ($_.AdditionalProperties.'@odata.type' -eq '#microsoft.graph.group') {
-                        New-MgGroupMember -GroupId $_.Id -DirectoryObjectId $newUser.Id
+                        $params = @{
+                            "@odata.id" = "https://graph.microsoft.com/v1.0/directoryObjects/$($newUser.Id)"
+                        }
+                        New-MgGroupMember -GroupId $_.Id -BodyParameter $params
                     }
                 }
             }
