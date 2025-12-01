@@ -218,12 +218,25 @@ if ($resultCode -Eq 200) {
                     # Connect to Exchange Online for mail-enabled groups using certificate authentication
                     try {
                         Write-Host "Connecting to Exchange Online with certificate..."
-                        Write-Host "Tenant ID: $TenantId"
-                        Write-Host "App ID: $($env:Ms365_AuthAppId)"
-                        Write-Host "Cert Thumbprint: $($env:Ms365_CertThumbprint)"
 
-                        # Use Tenant ID directly (Exchange accepts GUID format)
-                        Connect-ExchangeOnline -AppId $env:Ms365_AuthAppId -CertificateThumbprint $env:Ms365_CertThumbprint -Organization $TenantId -ShowBanner:$false -ErrorAction Stop
+                        # Extract organization name from user's email domain
+                        $userDomain = $ExistingUserEmail.Split('@')[1]
+                        $orgName = if ($userDomain -like "*.onmicrosoft.com") {
+                            # Already has onmicrosoft.com, use as-is
+                            $userDomain
+                        }
+                        elseif ($userDomain -like "*.com.au" -or $userDomain -like "*.com" -or $userDomain -like "*.net") {
+                            # Custom domain - need to find the onmicrosoft.com name
+                            # Get from the user's mail property or construct from domain
+                            $domainParts = $userDomain.Split('.')
+                            "$($domainParts[0]).onmicrosoft.com"
+                        }
+                        else {
+                            "$userDomain.onmicrosoft.com"
+                        }
+
+                        Write-Host "Connecting to Exchange with organization: $orgName"
+                        Connect-ExchangeOnline -AppId $env:Ms365_AuthAppId -CertificateThumbprint $env:Ms365_CertThumbprint -Organization $orgName -ShowBanner:$false -ErrorAction Stop
                         $exchangeConnected = $true
                         Write-Host "Exchange Online connected successfully"
                     }
