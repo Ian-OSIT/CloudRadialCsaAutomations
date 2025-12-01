@@ -226,24 +226,12 @@ if ($resultCode -Eq 200) {
                     # Connect to Exchange Online for mail-enabled groups using certificate authentication
                     try {
                         Write-Host "Connecting to Exchange Online with certificate..."
+                        Write-Host "Tenant ID: $TenantId"
+                        Write-Host "App ID: $($env:Ms365_AuthAppId)"
+                        Write-Host "Cert Thumbprint: $($env:Ms365_CertThumbprint)"
 
-                        # Determine organization name (remove .onmicrosoft.com if present)
-                        $orgName = if ($TenantId -match "^[0-9a-f]{8}-") {
-                            # If TenantId is a GUID, we need to construct the org name
-                            # For now, we'll try to get it from the domain
-                            $domain = (Get-MgUser -UserId $existingUserUpn -Property UserPrincipalName).UserPrincipalName.Split('@')[1]
-                            if ($domain -like "*.onmicrosoft.com") {
-                                $domain.Replace('.onmicrosoft.com', '')
-                            }
-                            else {
-                                $domain.Split('.')[0]
-                            }
-                        }
-                        else {
-                            $TenantId
-                        }
-
-                        Connect-ExchangeOnline -AppId $env:Ms365_AuthAppId -CertificateThumbprint $env:Ms365_CertThumbprint -Organization "$orgName.onmicrosoft.com" -ShowBanner:$false -ErrorAction Stop
+                        # Use Tenant ID directly (Exchange accepts GUID format)
+                        Connect-ExchangeOnline -AppId $env:Ms365_AuthAppId -CertificateThumbprint $env:Ms365_CertThumbprint -Organization $TenantId -ShowBanner:$false -ErrorAction Stop
                         $exchangeConnected = $true
                         Write-Host "Exchange Online connected successfully"
                     }
