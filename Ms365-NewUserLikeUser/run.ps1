@@ -149,21 +149,7 @@ if ($resultCode -Eq 200) {
             Write-Host "The existing user `"$ExistingUserEmail`" does not have any assigned licenses."
         }
         else {
-            # Retrieve all available licenses
-            $availableLicenses = Get-MgSubscribedSku
-
-            # Check if the available licenses match the existing user's licenses
-            $existingUserLicenseIds = $existingUser.AssignedLicenses.SkuId
-            $missingLicenses = $availableLicenses | Where-Object { $existingUserLicenseIds -notcontains $_.SkuId }
-
-            if ($missingLicenses.Count -gt 0) {
-                Write-Host "The following licenses are missing for the new user:"
-                $missingLicenses | ForEach-Object {
-                    Write-Host "- $($_.SkuPartNumber)"
-                }
-                $resultCode = 500
-                $message = "Request failed. The existing user `"$ExistingUserEmail`" has licenses that are not available for the new user."
-            }
+            Write-Host "Existing user has $($existingUser.AssignedLicenses.Count) licenses assigned"
         }
 
         if ($resultCode -eq 200) {
@@ -202,15 +188,21 @@ if ($resultCode -Eq 200) {
                 # Assign the same licenses as the existing user
                 if ($existingUser.AssignedLicenses.Count -gt 0) {
                     Write-Host "Assigning licenses..."
+                    $licensesAssigned = 0
+                    $licensesSkipped = 0
+
                     $existingUser.AssignedLicenses | ForEach-Object {
                         try {
                             Set-MgUserLicense -UserId $newUser.Id -AddLicenses @{ SkuId = $_.SkuId } -RemoveLicenses @() -ErrorAction Stop
+                            $licensesAssigned++
                             Write-Host "Assigned license: $($_.SkuId)"
                         }
                         catch {
-                            Write-Host "ERROR assigning license: $_"
+                            $licensesSkipped++
+                            Write-Host "WARNING: Could not assign license $($_.SkuId) (may not be available): $($_.Exception.Message)"
                         }
                     }
+                    Write-Host "Licenses summary: $licensesAssigned assigned successfully, $licensesSkipped skipped"
                 }
 
                 # Get the groups the existing user is a member of
